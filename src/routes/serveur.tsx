@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { RoleGate } from "@/components/app/RoleGate";
 import { AppHeader } from "@/components/app/AppHeader";
-import { fetchRooms, fetchTables, fetchCategories, fetchProducts, fmt, type Room, type Tbl, type Product } from "@/lib/data";
+import { fetchRooms, fetchTables, fetchCategories, fetchProducts, fmt, type Room, type Tbl, type Category, type Product } from "@/lib/data";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -186,9 +186,9 @@ function BigButton({ onClick, children }: { onClick: () => void; children: React
 
 function Menu({ cart, onAdd, onSub, categories, products, loading }: {
   cart: Cart; onAdd: (p: Product) => void; onSub: (p: Product) => void;
-  categories?: ReturnType<typeof useMemo<any>> & any; products?: Product[]; loading: boolean;
+  categories?: Category[]; products?: Product[]; loading: boolean;
 }) {
-  const cats = (categories ?? []) as { id: string; name: string }[];
+  const cats = categories ?? [];
   const [activeCat, setActiveCat] = useState<string | null>(null);
   useEffect(() => { if (!activeCat && cats.length) setActiveCat(cats[0].id); }, [cats, activeCat]);
 
