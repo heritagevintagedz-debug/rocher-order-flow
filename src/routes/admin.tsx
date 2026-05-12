@@ -200,6 +200,12 @@ function RoomsPanel() {
   const allTables = useQuery({ queryKey: ["all-tables"], queryFn: () => fetchTables() });
   const [newRoom, setNewRoom] = useState("");
 
+  // dialogs
+  const [renameRoomState, setRenameRoomState] = useState<{ id: string; name: string } | null>(null);
+  const [addTableState, setAddTableState] = useState<{ roomId: string } | null>(null);
+  const [renameTableState, setRenameTableState] = useState<{ id: string; label: string } | null>(null);
+  const [confirmState, setConfirmState] = useState<{ title: string; description: string; onConfirm: () => void } | null>(null);
+
   const grouped = useMemo(() => {
     const m: Record<string, { id: string; label: string }[]> = {};
     (allTables.data ?? []).forEach((t) => { (m[t.room_id] ||= []).push({ id: t.id, label: t.label }); });
@@ -212,32 +218,30 @@ function RoomsPanel() {
     if (error) return toast.error(error.message);
     setNewRoom(""); qc.invalidateQueries({ queryKey: ["rooms"] });
   };
-  const renameRoom = async (id: string, current: string) => {
-    const name = window.prompt("Nom de la salle", current)?.trim(); if (!name) return;
-    const { error } = await supabase.from("rooms").update({ name }).eq("id", id);
+  const doRenameRoom = async (id: string, name: string) => {
+    if (!name.trim()) return;
+    const { error } = await supabase.from("rooms").update({ name: name.trim() }).eq("id", id);
     if (error) return toast.error(error.message);
     qc.invalidateQueries({ queryKey: ["rooms"] });
   };
-  const delRoom = async (id: string) => {
-    if (!window.confirm("Supprimer cette salle et toutes ses tables ?")) return;
+  const doDelRoom = async (id: string) => {
     const { error } = await supabase.from("rooms").delete().eq("id", id);
     if (error) return toast.error(error.message);
     qc.invalidateQueries({ queryKey: ["rooms"] }); qc.invalidateQueries({ queryKey: ["all-tables"] });
   };
-  const addTable = async (roomId: string) => {
-    const label = window.prompt("Label de la table (ex: T1)")?.trim(); if (!label) return;
-    const { error } = await supabase.from("restaurant_tables").insert({ room_id: roomId, label });
+  const doAddTable = async (roomId: string, label: string) => {
+    if (!label.trim()) return;
+    const { error } = await supabase.from("restaurant_tables").insert({ room_id: roomId, label: label.trim() });
     if (error) return toast.error(error.message);
     qc.invalidateQueries({ queryKey: ["all-tables"] });
   };
-  const renameTable = async (id: string, current: string) => {
-    const label = window.prompt("Label", current)?.trim(); if (!label) return;
-    const { error } = await supabase.from("restaurant_tables").update({ label }).eq("id", id);
+  const doRenameTable = async (id: string, label: string) => {
+    if (!label.trim()) return;
+    const { error } = await supabase.from("restaurant_tables").update({ label: label.trim() }).eq("id", id);
     if (error) return toast.error(error.message);
     qc.invalidateQueries({ queryKey: ["all-tables"] });
   };
-  const delTable = async (id: string) => {
-    if (!window.confirm("Supprimer cette table ?")) return;
+  const doDelTable = async (id: string) => {
     const { error } = await supabase.from("restaurant_tables").delete().eq("id", id);
     if (error) return toast.error(error.message);
     qc.invalidateQueries({ queryKey: ["all-tables"] });
@@ -254,23 +258,55 @@ function RoomsPanel() {
           <li key={r.id} className="bg-card-gradient rounded-xl border border-border p-3 shadow-card">
             <div className="flex items-center gap-2">
               <span className="flex-1 font-semibold">{r.name}</span>
-              <Button size="icon" variant="ghost" onClick={() => renameRoom(r.id, r.name)}><Pencil className="h-4 w-4" /></Button>
-              <Button size="icon" variant="ghost" onClick={() => delRoom(r.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+              <Button size="icon" variant="ghost" onClick={() => setRenameRoomState({ id: r.id, name: r.name })}><Pencil className="h-4 w-4" /></Button>
+              <Button size="icon" variant="ghost" onClick={() => setConfirmState({ title: "Supprimer la salle", description: `Supprimer "${r.name}" et toutes ses tables ?`, onConfirm: () => doDelRoom(r.id) })}><Trash2 className="h-4 w-4 text-destructive" /></Button>
             </div>
             <div className="mt-2 flex flex-wrap gap-2">
               {(grouped[r.id] ?? []).map((t) => (
                 <span key={t.id} className="inline-flex items-center gap-1 rounded-full border border-border bg-secondary px-3 py-1 text-sm">
                   {t.label}
-                  <button onClick={() => renameTable(t.id, t.label)} className="ml-1 opacity-60 hover:opacity-100"><Pencil className="h-3 w-3" /></button>
-                  <button onClick={() => delTable(t.id)} className="opacity-60 hover:opacity-100"><Trash2 className="h-3 w-3 text-destructive" /></button>
+                  <button onClick={() => setRenameTableState({ id: t.id, label: t.label })} className="ml-1 opacity-60 hover:opacity-100"><Pencil className="h-3 w-3" /></button>
+                  <button onClick={() => setConfirmState({ title: "Supprimer la table", description: `Supprimer la table "${t.label}" ?`, onConfirm: () => doDelTable(t.id) })} className="opacity-60 hover:opacity-100"><Trash2 className="h-3 w-3 text-destructive" /></button>
                 </span>
               ))}
-              <Button size="sm" variant="secondary" onClick={() => addTable(r.id)} className="h-7"><Plus className="mr-1 h-3 w-3" /> Table</Button>
+              <Button size="sm" variant="secondary" onClick={() => setAddTableState({ roomId: r.id })} className="h-7"><Plus className="mr-1 h-3 w-3" /> Table</Button>
             </div>
           </li>
         ))}
         {rooms.data?.length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">Aucune salle. Créez-en une ci-dessus.</p>}
       </ul>
+
+      <PromptDialog
+        open={!!renameRoomState}
+        title="Renommer la salle"
+        label="Nom"
+        initial={renameRoomState?.name ?? ""}
+        onClose={() => setRenameRoomState(null)}
+        onSubmit={(v) => { if (renameRoomState) void doRenameRoom(renameRoomState.id, v); setRenameRoomState(null); }}
+      />
+      <PromptDialog
+        open={!!addTableState}
+        title="Nouvelle table"
+        label="Label (ex: T1)"
+        initial=""
+        onClose={() => setAddTableState(null)}
+        onSubmit={(v) => { if (addTableState) void doAddTable(addTableState.roomId, v); setAddTableState(null); }}
+      />
+      <PromptDialog
+        open={!!renameTableState}
+        title="Renommer la table"
+        label="Label"
+        initial={renameTableState?.label ?? ""}
+        onClose={() => setRenameTableState(null)}
+        onSubmit={(v) => { if (renameTableState) void doRenameTable(renameTableState.id, v); setRenameTableState(null); }}
+      />
+      <ConfirmDialog
+        open={!!confirmState}
+        title={confirmState?.title ?? ""}
+        description={confirmState?.description ?? ""}
+        onClose={() => setConfirmState(null)}
+        onConfirm={() => { confirmState?.onConfirm(); setConfirmState(null); }}
+      />
     </div>
   );
 }
