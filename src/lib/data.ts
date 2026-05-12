@@ -22,6 +22,7 @@ export type OrderItem = {
   product_name: string;
   unit_price: number;
   quantity: number;
+  note: string | null;
 };
 
 export const fmt = (n: number) => new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
