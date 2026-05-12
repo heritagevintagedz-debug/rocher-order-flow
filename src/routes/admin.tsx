@@ -319,37 +319,37 @@ function MenuPanel() {
   const prods = useQuery({ queryKey: ["products"], queryFn: fetchProducts });
   const [newCat, setNewCat] = useState("");
 
+  const [renameCatState, setRenameCatState] = useState<{ id: string; name: string } | null>(null);
+  const [addProdState, setAddProdState] = useState<{ catId: string } | null>(null);
+  const [editProdState, setEditProdState] = useState<{ id: string; name: string; price: number } | null>(null);
+  const [confirmState, setConfirmState] = useState<{ title: string; description: string; onConfirm: () => void } | null>(null);
+
   const addCat = async () => {
     const name = newCat.trim(); if (!name) return;
     const { error } = await supabase.from("categories").insert({ name });
     if (error) return toast.error(error.message);
     setNewCat(""); qc.invalidateQueries({ queryKey: ["categories"] });
   };
-  const renameCat = async (id: string, current: string) => {
-    const name = window.prompt("Nom de la catégorie", current)?.trim(); if (!name) return;
-    const { error } = await supabase.from("categories").update({ name }).eq("id", id);
+  const doRenameCat = async (id: string, name: string) => {
+    if (!name.trim()) return;
+    const { error } = await supabase.from("categories").update({ name: name.trim() }).eq("id", id);
     if (error) return toast.error(error.message);
     qc.invalidateQueries({ queryKey: ["categories"] });
   };
-  const delCat = async (id: string) => {
-    if (!window.confirm("Supprimer cette catégorie et tous ses produits ?")) return;
+  const doDelCat = async (id: string) => {
     const { error } = await supabase.from("categories").delete().eq("id", id);
     if (error) return toast.error(error.message);
     qc.invalidateQueries({ queryKey: ["categories"] }); qc.invalidateQueries({ queryKey: ["products"] });
   };
-  const addProduct = async (catId: string) => {
-    const name = window.prompt("Nom du produit")?.trim(); if (!name) return;
-    const priceStr = window.prompt("Prix (en €)", "0.00")?.replace(",", "."); if (priceStr == null) return;
-    const price = Number(priceStr); if (!Number.isFinite(price) || price < 0) return toast.error("Prix invalide");
-    const { error } = await supabase.from("products").insert({ category_id: catId, name, price });
+  const doAddProduct = async (catId: string, name: string, price: number) => {
+    if (!name.trim() || !Number.isFinite(price) || price < 0) return toast.error("Données invalides");
+    const { error } = await supabase.from("products").insert({ category_id: catId, name: name.trim(), price });
     if (error) return toast.error(error.message);
     qc.invalidateQueries({ queryKey: ["products"] });
   };
-  const editProduct = async (id: string, currentName: string, currentPrice: number) => {
-    const name = window.prompt("Nom", currentName)?.trim(); if (!name) return;
-    const priceStr = window.prompt("Prix (en €)", String(currentPrice))?.replace(",", "."); if (priceStr == null) return;
-    const price = Number(priceStr); if (!Number.isFinite(price) || price < 0) return toast.error("Prix invalide");
-    const { error } = await supabase.from("products").update({ name, price }).eq("id", id);
+  const doEditProduct = async (id: string, name: string, price: number) => {
+    if (!name.trim() || !Number.isFinite(price) || price < 0) return toast.error("Données invalides");
+    const { error } = await supabase.from("products").update({ name: name.trim(), price }).eq("id", id);
     if (error) return toast.error(error.message);
     qc.invalidateQueries({ queryKey: ["products"] });
   };
@@ -358,8 +358,7 @@ function MenuPanel() {
     if (error) return toast.error(error.message);
     qc.invalidateQueries({ queryKey: ["products"] });
   };
-  const delProduct = async (id: string) => {
-    if (!window.confirm("Supprimer ce produit ?")) return;
+  const doDelProduct = async (id: string) => {
     const { error } = await supabase.from("products").delete().eq("id", id);
     if (error) return toast.error(error.message);
     qc.invalidateQueries({ queryKey: ["products"] });
@@ -378,8 +377,8 @@ function MenuPanel() {
             <section key={c.id} className="bg-card-gradient rounded-xl border border-border p-3 shadow-card">
               <div className="mb-2 flex items-center gap-2">
                 <h3 className="flex-1 text-base font-semibold">{c.name}</h3>
-                <Button size="icon" variant="ghost" onClick={() => renameCat(c.id, c.name)}><Pencil className="h-4 w-4" /></Button>
-                <Button size="icon" variant="ghost" onClick={() => delCat(c.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                <Button size="icon" variant="ghost" onClick={() => setRenameCatState({ id: c.id, name: c.name })}><Pencil className="h-4 w-4" /></Button>
+                <Button size="icon" variant="ghost" onClick={() => setConfirmState({ title: "Supprimer la catégorie", description: `Supprimer "${c.name}" et tous ses produits ?`, onConfirm: () => doDelCat(c.id) })}><Trash2 className="h-4 w-4 text-destructive" /></Button>
               </div>
               <ul className="space-y-1.5">
                 {list.map((p) => (
@@ -391,12 +390,12 @@ function MenuPanel() {
                     <Button size="sm" variant="ghost" onClick={() => toggleAvail(p.id, p.available)} className="h-8 px-2 text-xs">
                       {p.available ? "Masquer" : "Afficher"}
                     </Button>
-                    <Button size="icon" variant="ghost" onClick={() => editProduct(p.id, p.name, p.price)}><Pencil className="h-4 w-4" /></Button>
-                    <Button size="icon" variant="ghost" onClick={() => delProduct(p.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                    <Button size="icon" variant="ghost" onClick={() => setEditProdState({ id: p.id, name: p.name, price: p.price })}><Pencil className="h-4 w-4" /></Button>
+                    <Button size="icon" variant="ghost" onClick={() => setConfirmState({ title: "Supprimer le produit", description: `Supprimer "${p.name}" ?`, onConfirm: () => doDelProduct(p.id) })}><Trash2 className="h-4 w-4 text-destructive" /></Button>
                   </li>
                 ))}
               </ul>
-              <Button size="sm" variant="secondary" onClick={() => addProduct(c.id)} className="mt-2 h-9 w-full">
+              <Button size="sm" variant="secondary" onClick={() => setAddProdState({ catId: c.id })} className="mt-2 h-9 w-full">
                 <Plus className="mr-1 h-4 w-4" /> Ajouter un produit
               </Button>
             </section>
@@ -404,7 +403,111 @@ function MenuPanel() {
         })}
         {cats.data?.length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">Aucune catégorie. Créez-en une ci-dessus.</p>}
       </div>
+
+      <PromptDialog
+        open={!!renameCatState}
+        title="Renommer la catégorie"
+        label="Nom"
+        initial={renameCatState?.name ?? ""}
+        onClose={() => setRenameCatState(null)}
+        onSubmit={(v) => { if (renameCatState) void doRenameCat(renameCatState.id, v); setRenameCatState(null); }}
+      />
+      <ProductDialog
+        open={!!addProdState}
+        title="Nouveau produit"
+        initial={{ name: "", price: 0 }}
+        onClose={() => setAddProdState(null)}
+        onSubmit={({ name, price }) => { if (addProdState) void doAddProduct(addProdState.catId, name, price); setAddProdState(null); }}
+      />
+      <ProductDialog
+        open={!!editProdState}
+        title="Modifier le produit"
+        initial={editProdState ? { name: editProdState.name, price: editProdState.price } : { name: "", price: 0 }}
+        onClose={() => setEditProdState(null)}
+        onSubmit={({ name, price }) => { if (editProdState) void doEditProduct(editProdState.id, name, price); setEditProdState(null); }}
+      />
+      <ConfirmDialog
+        open={!!confirmState}
+        title={confirmState?.title ?? ""}
+        description={confirmState?.description ?? ""}
+        onClose={() => setConfirmState(null)}
+        onConfirm={() => { confirmState?.onConfirm(); setConfirmState(null); }}
+      />
     </div>
+  );
+}
+
+/* ---------------- DIALOGS ---------------- */
+
+function PromptDialog({ open, title, label, initial, onClose, onSubmit }: {
+  open: boolean; title: string; label: string; initial: string;
+  onClose: () => void; onSubmit: (value: string) => void;
+}) {
+  const [value, setValue] = useState(initial);
+  useEffect(() => { if (open) setValue(initial); }, [open, initial]);
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
+        <div className="space-y-2">
+          <Label>{label}</Label>
+          <Input autoFocus value={value} onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && value.trim()) { onSubmit(value); } }} />
+        </div>
+        <DialogFooter>
+          <DialogClose asChild><Button variant="secondary">Annuler</Button></DialogClose>
+          <Button className="bg-brand-gradient" onClick={() => value.trim() && onSubmit(value)}>Valider</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ProductDialog({ open, title, initial, onClose, onSubmit }: {
+  open: boolean; title: string; initial: { name: string; price: number };
+  onClose: () => void; onSubmit: (v: { name: string; price: number }) => void;
+}) {
+  const [name, setName] = useState(initial.name);
+  const [price, setPrice] = useState(String(initial.price));
+  useEffect(() => { if (open) { setName(initial.name); setPrice(String(initial.price)); } }, [open, initial.name, initial.price]);
+  const submit = () => {
+    const p = Number(price.replace(",", "."));
+    if (!name.trim() || !Number.isFinite(p) || p < 0) { toast.error("Données invalides"); return; }
+    onSubmit({ name, price: p });
+  };
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1.5"><Label>Nom</Label><Input autoFocus value={name} onChange={(e) => setName(e.target.value)} /></div>
+          <div className="space-y-1.5"><Label>Prix (€)</Label><Input inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} /></div>
+        </div>
+        <DialogFooter>
+          <DialogClose asChild><Button variant="secondary">Annuler</Button></DialogClose>
+          <Button className="bg-brand-gradient" onClick={submit}>Valider</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ConfirmDialog({ open, title, description, onClose, onConfirm }: {
+  open: boolean; title: string; description: string; onClose: () => void; onConfirm: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <DialogClose asChild><Button variant="secondary">Annuler</Button></DialogClose>
+          <Button variant="destructive" onClick={onConfirm}>Supprimer</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
