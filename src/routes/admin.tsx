@@ -142,12 +142,19 @@ function OrderCard({ order, items, onUpdate }: { order: OrderRow; items: OrderIt
       </div>
       <ul className="divide-y divide-border">
         {items.map((it) => (
-          <li key={it.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
-            <span className="flex items-center gap-3">
-              <span className="inline-flex h-7 min-w-7 items-center justify-center rounded-md bg-primary/15 px-2 text-sm font-bold text-primary">×{it.quantity}</span>
-              <span>{it.product_name}</span>
-            </span>
-            <span className="text-muted-foreground">{fmt(it.unit_price * it.quantity)} €</span>
+          <li key={it.id} className="px-4 py-2.5 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-3">
+                <span className="inline-flex h-7 min-w-7 items-center justify-center rounded-md bg-primary/15 px-2 text-sm font-bold text-primary">×{it.quantity}</span>
+                <span>{it.product_name}</span>
+              </span>
+              <span className="text-muted-foreground">{fmt(it.unit_price * it.quantity)} €</span>
+            </div>
+            {it.note && (
+              <div className="mt-1 ml-10 rounded-md bg-warning/10 px-2 py-1 text-xs text-warning">
+                ⚠ {it.note}
+              </div>
+            )}
           </li>
         ))}
       </ul>
