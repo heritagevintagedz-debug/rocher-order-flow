@@ -8,13 +8,13 @@ import { fetchRooms, fetchTables, fetchCategories, fetchProducts, fmt, type Room
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { ChevronLeft, Minus, Plus, Send, ShoppingCart, Loader2, MapPin, Hash } from "lucide-react";
+import { ChevronLeft, Minus, Plus, Send, ShoppingCart, Loader2, MapPin, Hash, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/serveur")({ component: () => <RoleGate allow="server"><ServerApp /></RoleGate> });
 
 type Step = "rooms" | "tables" | "menu" | "review";
-type Cart = Record<string, { product: Product; qty: number }>;
+type Cart = Record<string, { product: Product; qty: number; note: string }>;
 
 function ServerApp() {
   const { user, fullName } = useAuth();
@@ -22,7 +22,6 @@ function ServerApp() {
   const [room, setRoom] = useState<Room | null>(null);
   const [table, setTable] = useState<Tbl | null>(null);
   const [cart, setCart] = useState<Cart>({});
-  const [note, setNote] = useState("");
   const [sending, setSending] = useState(false);
 
   const rooms = useQuery({ queryKey: ["rooms"], queryFn: fetchRooms });
@@ -36,18 +35,20 @@ function ServerApp() {
   );
   const itemCount = useMemo(() => Object.values(cart).reduce((s, l) => s + l.qty, 0), [cart]);
 
-  const addOne = (p: Product) => setCart((c) => ({ ...c, [p.id]: { product: p, qty: (c[p.id]?.qty ?? 0) + 1 } }));
+  const addOne = (p: Product) => setCart((c) => ({ ...c, [p.id]: { product: p, qty: (c[p.id]?.qty ?? 0) + 1, note: c[p.id]?.note ?? "" } }));
   const subOne = (p: Product) => setCart((c) => {
     const cur = c[p.id]?.qty ?? 0;
     const next = cur - 1;
     const copy = { ...c };
     if (next <= 0) delete copy[p.id];
-    else copy[p.id] = { product: p, qty: next };
+    else copy[p.id] = { product: p, qty: next, note: c[p.id]?.note ?? "" };
     return copy;
   });
+  const setItemNote = (id: string, note: string) =>
+    setCart((c) => (c[id] ? { ...c, [id]: { ...c[id], note } } : c));
 
   const reset = () => {
-    setStep("rooms"); setRoom(null); setTable(null); setCart({}); setNote("");
+    setStep("rooms"); setRoom(null); setTable(null); setCart({});
   };
 
   const sendOrder = async () => {
@@ -60,7 +61,7 @@ function ServerApp() {
       table_label: table.label,
       room_name: room.name,
       total,
-      note: note.trim() || null,
+      note: null,
     }).select().single();
     if (error || !order) { setSending(false); toast.error(error?.message ?? "Erreur envoi"); return; }
     const items = Object.values(cart).map((l) => ({
@@ -69,6 +70,7 @@ function ServerApp() {
       product_name: l.product.name,
       unit_price: l.product.price,
       quantity: l.qty,
+      note: l.note.trim() || null,
     }));
     const { error: e2 } = await supabase.from("order_items").insert(items);
     setSending(false);
@@ -128,7 +130,7 @@ function ServerApp() {
         )}
 
         {step === "review" && (
-          <Review cart={cart} note={note} setNote={setNote} onAdd={addOne} onSub={subOne} total={total} />
+          <Review cart={cart} onAdd={addOne} onSub={subOne} onNote={setItemNote} total={total} />
         )}
       </main>
 
