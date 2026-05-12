@@ -241,30 +241,39 @@ function Menu({ cart, onAdd, onSub, categories, products, loading }: {
   );
 }
 
-function Review({ cart, note, setNote, onAdd, onSub, total }: {
-  cart: Cart; note: string; setNote: (v: string) => void;
-  onAdd: (p: Product) => void; onSub: (p: Product) => void; total: number;
+function Review({ cart, onAdd, onSub, onNote, total }: {
+  cart: Cart;
+  onAdd: (p: Product) => void; onSub: (p: Product) => void;
+  onNote: (id: string, note: string) => void; total: number;
 }) {
   const lines = Object.values(cart);
   return (
     <div className="space-y-4">
-      <ul className="space-y-2">
+      <ul className="space-y-3">
         {lines.map((l) => (
-          <li key={l.product.id} className="bg-card-gradient flex items-center gap-3 rounded-xl border border-border p-3 shadow-card">
-            <div className="min-w-0 flex-1">
-              <div className="truncate font-semibold">{l.product.name}</div>
-              <div className="text-sm text-muted-foreground">{fmt(l.product.price)} € × {l.qty} = <span className="font-medium text-foreground">{fmt(l.product.price * l.qty)} €</span></div>
+          <li key={l.product.id} className="bg-card-gradient rounded-xl border border-border p-3 shadow-card">
+            <div className="flex items-center gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-semibold">{l.product.name}</div>
+                <div className="text-sm text-muted-foreground">{fmt(l.product.price)} € × {l.qty} = <span className="font-medium text-foreground">{fmt(l.product.price * l.qty)} €</span></div>
+              </div>
+              <Button size="icon" variant="secondary" className="h-10 w-10" onClick={() => onSub(l.product)}><Minus className="h-4 w-4" /></Button>
+              <span className="w-6 text-center text-base font-bold">{l.qty}</span>
+              <Button size="icon" className="h-10 w-10 bg-brand-gradient" onClick={() => onAdd(l.product)}><Plus className="h-4 w-4" /></Button>
             </div>
-            <Button size="icon" variant="secondary" className="h-10 w-10" onClick={() => onSub(l.product)}><Minus className="h-4 w-4" /></Button>
-            <span className="w-6 text-center text-base font-bold">{l.qty}</span>
-            <Button size="icon" className="h-10 w-10 bg-brand-gradient" onClick={() => onAdd(l.product)}><Plus className="h-4 w-4" /></Button>
+            <div className="mt-2 flex items-start gap-2">
+              <MessageSquare className="mt-2 h-4 w-4 shrink-0 opacity-60" />
+              <Textarea
+                value={l.note}
+                onChange={(e) => onNote(l.product.id, e.target.value)}
+                placeholder="Remarque (ex: sans oignons, bien cuit...)"
+                rows={2}
+                className="resize-none text-sm"
+              />
+            </div>
           </li>
         ))}
       </ul>
-      <div className="space-y-2">
-        <label className="text-sm font-medium" htmlFor="note">Remarque (optionnel)</label>
-        <Textarea id="note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ex: sans oignons, bien cuit, allergie..." rows={3} className="resize-none" />
-      </div>
       <div className="bg-card-gradient flex items-center justify-between rounded-xl border border-border p-4 shadow-card">
         <span className="text-sm text-muted-foreground">Total</span>
         <span className="text-2xl font-bold">{fmt(total)} €</span>
