@@ -9,6 +9,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { Bell, Check, Clock, Loader2, MapPin, Pencil, Plus, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 
@@ -138,12 +142,19 @@ function OrderCard({ order, items, onUpdate }: { order: OrderRow; items: OrderIt
       </div>
       <ul className="divide-y divide-border">
         {items.map((it) => (
-          <li key={it.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
-            <span className="flex items-center gap-3">
-              <span className="inline-flex h-7 min-w-7 items-center justify-center rounded-md bg-primary/15 px-2 text-sm font-bold text-primary">×{it.quantity}</span>
-              <span>{it.product_name}</span>
-            </span>
-            <span className="text-muted-foreground">{fmt(it.unit_price * it.quantity)} €</span>
+          <li key={it.id} className="px-4 py-2.5 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-3">
+                <span className="inline-flex h-7 min-w-7 items-center justify-center rounded-md bg-primary/15 px-2 text-sm font-bold text-primary">×{it.quantity}</span>
+                <span>{it.product_name}</span>
+              </span>
+              <span className="text-muted-foreground">{fmt(it.unit_price * it.quantity)} €</span>
+            </div>
+            {it.note && (
+              <div className="mt-1 ml-10 rounded-md bg-warning/10 px-2 py-1 text-xs text-warning">
+                ⚠ {it.note}
+              </div>
+            )}
           </li>
         ))}
       </ul>
@@ -189,6 +200,12 @@ function RoomsPanel() {
   const allTables = useQuery({ queryKey: ["all-tables"], queryFn: () => fetchTables() });
   const [newRoom, setNewRoom] = useState("");
 
+  // dialogs
+  const [renameRoomState, setRenameRoomState] = useState<{ id: string; name: string } | null>(null);
+  const [addTableState, setAddTableState] = useState<{ roomId: string } | null>(null);
+  const [renameTableState, setRenameTableState] = useState<{ id: string; label: string } | null>(null);
+  const [confirmState, setConfirmState] = useState<{ title: string; description: string; onConfirm: () => void } | null>(null);
+
   const grouped = useMemo(() => {
     const m: Record<string, { id: string; label: string }[]> = {};
     (allTables.data ?? []).forEach((t) => { (m[t.room_id] ||= []).push({ id: t.id, label: t.label }); });
@@ -201,32 +218,30 @@ function RoomsPanel() {
     if (error) return toast.error(error.message);
     setNewRoom(""); qc.invalidateQueries({ queryKey: ["rooms"] });
   };
-  const renameRoom = async (id: string, current: string) => {
-    const name = window.prompt("Nom de la salle", current)?.trim(); if (!name) return;
-    const { error } = await supabase.from("rooms").update({ name }).eq("id", id);
+  const doRenameRoom = async (id: string, name: string) => {
+    if (!name.trim()) return;
+    const { error } = await supabase.from("rooms").update({ name: name.trim() }).eq("id", id);
     if (error) return toast.error(error.message);
     qc.invalidateQueries({ queryKey: ["rooms"] });
   };
-  const delRoom = async (id: string) => {
-    if (!window.confirm("Supprimer cette salle et toutes ses tables ?")) return;
+  const doDelRoom = async (id: string) => {
     const { error } = await supabase.from("rooms").delete().eq("id", id);
     if (error) return toast.error(error.message);
     qc.invalidateQueries({ queryKey: ["rooms"] }); qc.invalidateQueries({ queryKey: ["all-tables"] });
   };
-  const addTable = async (roomId: string) => {
-    const label = window.prompt("Label de la table (ex: T1)")?.trim(); if (!label) return;
-    const { error } = await supabase.from("restaurant_tables").insert({ room_id: roomId, label });
+  const doAddTable = async (roomId: string, label: string) => {
+    if (!label.trim()) return;
+    const { error } = await supabase.from("restaurant_tables").insert({ room_id: roomId, label: label.trim() });
     if (error) return toast.error(error.message);
     qc.invalidateQueries({ queryKey: ["all-tables"] });
   };
-  const renameTable = async (id: string, current: string) => {
-    const label = window.prompt("Label", current)?.trim(); if (!label) return;
-    const { error } = await supabase.from("restaurant_tables").update({ label }).eq("id", id);
+  const doRenameTable = async (id: string, label: string) => {
+    if (!label.trim()) return;
+    const { error } = await supabase.from("restaurant_tables").update({ label: label.trim() }).eq("id", id);
     if (error) return toast.error(error.message);
     qc.invalidateQueries({ queryKey: ["all-tables"] });
   };
-  const delTable = async (id: string) => {
-    if (!window.confirm("Supprimer cette table ?")) return;
+  const doDelTable = async (id: string) => {
     const { error } = await supabase.from("restaurant_tables").delete().eq("id", id);
     if (error) return toast.error(error.message);
     qc.invalidateQueries({ queryKey: ["all-tables"] });
@@ -243,23 +258,55 @@ function RoomsPanel() {
           <li key={r.id} className="bg-card-gradient rounded-xl border border-border p-3 shadow-card">
             <div className="flex items-center gap-2">
               <span className="flex-1 font-semibold">{r.name}</span>
-              <Button size="icon" variant="ghost" onClick={() => renameRoom(r.id, r.name)}><Pencil className="h-4 w-4" /></Button>
-              <Button size="icon" variant="ghost" onClick={() => delRoom(r.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+              <Button size="icon" variant="ghost" onClick={() => setRenameRoomState({ id: r.id, name: r.name })}><Pencil className="h-4 w-4" /></Button>
+              <Button size="icon" variant="ghost" onClick={() => setConfirmState({ title: "Supprimer la salle", description: `Supprimer "${r.name}" et toutes ses tables ?`, onConfirm: () => doDelRoom(r.id) })}><Trash2 className="h-4 w-4 text-destructive" /></Button>
             </div>
             <div className="mt-2 flex flex-wrap gap-2">
               {(grouped[r.id] ?? []).map((t) => (
                 <span key={t.id} className="inline-flex items-center gap-1 rounded-full border border-border bg-secondary px-3 py-1 text-sm">
                   {t.label}
-                  <button onClick={() => renameTable(t.id, t.label)} className="ml-1 opacity-60 hover:opacity-100"><Pencil className="h-3 w-3" /></button>
-                  <button onClick={() => delTable(t.id)} className="opacity-60 hover:opacity-100"><Trash2 className="h-3 w-3 text-destructive" /></button>
+                  <button onClick={() => setRenameTableState({ id: t.id, label: t.label })} className="ml-1 opacity-60 hover:opacity-100"><Pencil className="h-3 w-3" /></button>
+                  <button onClick={() => setConfirmState({ title: "Supprimer la table", description: `Supprimer la table "${t.label}" ?`, onConfirm: () => doDelTable(t.id) })} className="opacity-60 hover:opacity-100"><Trash2 className="h-3 w-3 text-destructive" /></button>
                 </span>
               ))}
-              <Button size="sm" variant="secondary" onClick={() => addTable(r.id)} className="h-7"><Plus className="mr-1 h-3 w-3" /> Table</Button>
+              <Button size="sm" variant="secondary" onClick={() => setAddTableState({ roomId: r.id })} className="h-7"><Plus className="mr-1 h-3 w-3" /> Table</Button>
             </div>
           </li>
         ))}
         {rooms.data?.length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">Aucune salle. Créez-en une ci-dessus.</p>}
       </ul>
+
+      <PromptDialog
+        open={!!renameRoomState}
+        title="Renommer la salle"
+        label="Nom"
+        initial={renameRoomState?.name ?? ""}
+        onClose={() => setRenameRoomState(null)}
+        onSubmit={(v) => { if (renameRoomState) void doRenameRoom(renameRoomState.id, v); setRenameRoomState(null); }}
+      />
+      <PromptDialog
+        open={!!addTableState}
+        title="Nouvelle table"
+        label="Label (ex: T1)"
+        initial=""
+        onClose={() => setAddTableState(null)}
+        onSubmit={(v) => { if (addTableState) void doAddTable(addTableState.roomId, v); setAddTableState(null); }}
+      />
+      <PromptDialog
+        open={!!renameTableState}
+        title="Renommer la table"
+        label="Label"
+        initial={renameTableState?.label ?? ""}
+        onClose={() => setRenameTableState(null)}
+        onSubmit={(v) => { if (renameTableState) void doRenameTable(renameTableState.id, v); setRenameTableState(null); }}
+      />
+      <ConfirmDialog
+        open={!!confirmState}
+        title={confirmState?.title ?? ""}
+        description={confirmState?.description ?? ""}
+        onClose={() => setConfirmState(null)}
+        onConfirm={() => { confirmState?.onConfirm(); setConfirmState(null); }}
+      />
     </div>
   );
 }
@@ -272,37 +319,37 @@ function MenuPanel() {
   const prods = useQuery({ queryKey: ["products"], queryFn: fetchProducts });
   const [newCat, setNewCat] = useState("");
 
+  const [renameCatState, setRenameCatState] = useState<{ id: string; name: string } | null>(null);
+  const [addProdState, setAddProdState] = useState<{ catId: string } | null>(null);
+  const [editProdState, setEditProdState] = useState<{ id: string; name: string; price: number } | null>(null);
+  const [confirmState, setConfirmState] = useState<{ title: string; description: string; onConfirm: () => void } | null>(null);
+
   const addCat = async () => {
     const name = newCat.trim(); if (!name) return;
     const { error } = await supabase.from("categories").insert({ name });
     if (error) return toast.error(error.message);
     setNewCat(""); qc.invalidateQueries({ queryKey: ["categories"] });
   };
-  const renameCat = async (id: string, current: string) => {
-    const name = window.prompt("Nom de la catégorie", current)?.trim(); if (!name) return;
-    const { error } = await supabase.from("categories").update({ name }).eq("id", id);
+  const doRenameCat = async (id: string, name: string) => {
+    if (!name.trim()) return;
+    const { error } = await supabase.from("categories").update({ name: name.trim() }).eq("id", id);
     if (error) return toast.error(error.message);
     qc.invalidateQueries({ queryKey: ["categories"] });
   };
-  const delCat = async (id: string) => {
-    if (!window.confirm("Supprimer cette catégorie et tous ses produits ?")) return;
+  const doDelCat = async (id: string) => {
     const { error } = await supabase.from("categories").delete().eq("id", id);
     if (error) return toast.error(error.message);
     qc.invalidateQueries({ queryKey: ["categories"] }); qc.invalidateQueries({ queryKey: ["products"] });
   };
-  const addProduct = async (catId: string) => {
-    const name = window.prompt("Nom du produit")?.trim(); if (!name) return;
-    const priceStr = window.prompt("Prix (en €)", "0.00")?.replace(",", "."); if (priceStr == null) return;
-    const price = Number(priceStr); if (!Number.isFinite(price) || price < 0) return toast.error("Prix invalide");
-    const { error } = await supabase.from("products").insert({ category_id: catId, name, price });
+  const doAddProduct = async (catId: string, name: string, price: number) => {
+    if (!name.trim() || !Number.isFinite(price) || price < 0) return toast.error("Données invalides");
+    const { error } = await supabase.from("products").insert({ category_id: catId, name: name.trim(), price });
     if (error) return toast.error(error.message);
     qc.invalidateQueries({ queryKey: ["products"] });
   };
-  const editProduct = async (id: string, currentName: string, currentPrice: number) => {
-    const name = window.prompt("Nom", currentName)?.trim(); if (!name) return;
-    const priceStr = window.prompt("Prix (en €)", String(currentPrice))?.replace(",", "."); if (priceStr == null) return;
-    const price = Number(priceStr); if (!Number.isFinite(price) || price < 0) return toast.error("Prix invalide");
-    const { error } = await supabase.from("products").update({ name, price }).eq("id", id);
+  const doEditProduct = async (id: string, name: string, price: number) => {
+    if (!name.trim() || !Number.isFinite(price) || price < 0) return toast.error("Données invalides");
+    const { error } = await supabase.from("products").update({ name: name.trim(), price }).eq("id", id);
     if (error) return toast.error(error.message);
     qc.invalidateQueries({ queryKey: ["products"] });
   };
@@ -311,8 +358,7 @@ function MenuPanel() {
     if (error) return toast.error(error.message);
     qc.invalidateQueries({ queryKey: ["products"] });
   };
-  const delProduct = async (id: string) => {
-    if (!window.confirm("Supprimer ce produit ?")) return;
+  const doDelProduct = async (id: string) => {
     const { error } = await supabase.from("products").delete().eq("id", id);
     if (error) return toast.error(error.message);
     qc.invalidateQueries({ queryKey: ["products"] });
@@ -331,8 +377,8 @@ function MenuPanel() {
             <section key={c.id} className="bg-card-gradient rounded-xl border border-border p-3 shadow-card">
               <div className="mb-2 flex items-center gap-2">
                 <h3 className="flex-1 text-base font-semibold">{c.name}</h3>
-                <Button size="icon" variant="ghost" onClick={() => renameCat(c.id, c.name)}><Pencil className="h-4 w-4" /></Button>
-                <Button size="icon" variant="ghost" onClick={() => delCat(c.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                <Button size="icon" variant="ghost" onClick={() => setRenameCatState({ id: c.id, name: c.name })}><Pencil className="h-4 w-4" /></Button>
+                <Button size="icon" variant="ghost" onClick={() => setConfirmState({ title: "Supprimer la catégorie", description: `Supprimer "${c.name}" et tous ses produits ?`, onConfirm: () => doDelCat(c.id) })}><Trash2 className="h-4 w-4 text-destructive" /></Button>
               </div>
               <ul className="space-y-1.5">
                 {list.map((p) => (
@@ -344,12 +390,12 @@ function MenuPanel() {
                     <Button size="sm" variant="ghost" onClick={() => toggleAvail(p.id, p.available)} className="h-8 px-2 text-xs">
                       {p.available ? "Masquer" : "Afficher"}
                     </Button>
-                    <Button size="icon" variant="ghost" onClick={() => editProduct(p.id, p.name, p.price)}><Pencil className="h-4 w-4" /></Button>
-                    <Button size="icon" variant="ghost" onClick={() => delProduct(p.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                    <Button size="icon" variant="ghost" onClick={() => setEditProdState({ id: p.id, name: p.name, price: p.price })}><Pencil className="h-4 w-4" /></Button>
+                    <Button size="icon" variant="ghost" onClick={() => setConfirmState({ title: "Supprimer le produit", description: `Supprimer "${p.name}" ?`, onConfirm: () => doDelProduct(p.id) })}><Trash2 className="h-4 w-4 text-destructive" /></Button>
                   </li>
                 ))}
               </ul>
-              <Button size="sm" variant="secondary" onClick={() => addProduct(c.id)} className="mt-2 h-9 w-full">
+              <Button size="sm" variant="secondary" onClick={() => setAddProdState({ catId: c.id })} className="mt-2 h-9 w-full">
                 <Plus className="mr-1 h-4 w-4" /> Ajouter un produit
               </Button>
             </section>
@@ -357,7 +403,111 @@ function MenuPanel() {
         })}
         {cats.data?.length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">Aucune catégorie. Créez-en une ci-dessus.</p>}
       </div>
+
+      <PromptDialog
+        open={!!renameCatState}
+        title="Renommer la catégorie"
+        label="Nom"
+        initial={renameCatState?.name ?? ""}
+        onClose={() => setRenameCatState(null)}
+        onSubmit={(v) => { if (renameCatState) void doRenameCat(renameCatState.id, v); setRenameCatState(null); }}
+      />
+      <ProductDialog
+        open={!!addProdState}
+        title="Nouveau produit"
+        initial={{ name: "", price: 0 }}
+        onClose={() => setAddProdState(null)}
+        onSubmit={({ name, price }) => { if (addProdState) void doAddProduct(addProdState.catId, name, price); setAddProdState(null); }}
+      />
+      <ProductDialog
+        open={!!editProdState}
+        title="Modifier le produit"
+        initial={editProdState ? { name: editProdState.name, price: editProdState.price } : { name: "", price: 0 }}
+        onClose={() => setEditProdState(null)}
+        onSubmit={({ name, price }) => { if (editProdState) void doEditProduct(editProdState.id, name, price); setEditProdState(null); }}
+      />
+      <ConfirmDialog
+        open={!!confirmState}
+        title={confirmState?.title ?? ""}
+        description={confirmState?.description ?? ""}
+        onClose={() => setConfirmState(null)}
+        onConfirm={() => { confirmState?.onConfirm(); setConfirmState(null); }}
+      />
     </div>
+  );
+}
+
+/* ---------------- DIALOGS ---------------- */
+
+function PromptDialog({ open, title, label, initial, onClose, onSubmit }: {
+  open: boolean; title: string; label: string; initial: string;
+  onClose: () => void; onSubmit: (value: string) => void;
+}) {
+  const [value, setValue] = useState(initial);
+  useEffect(() => { if (open) setValue(initial); }, [open, initial]);
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
+        <div className="space-y-2">
+          <Label>{label}</Label>
+          <Input autoFocus value={value} onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && value.trim()) { onSubmit(value); } }} />
+        </div>
+        <DialogFooter>
+          <DialogClose asChild><Button variant="secondary">Annuler</Button></DialogClose>
+          <Button className="bg-brand-gradient" onClick={() => value.trim() && onSubmit(value)}>Valider</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ProductDialog({ open, title, initial, onClose, onSubmit }: {
+  open: boolean; title: string; initial: { name: string; price: number };
+  onClose: () => void; onSubmit: (v: { name: string; price: number }) => void;
+}) {
+  const [name, setName] = useState(initial.name);
+  const [price, setPrice] = useState(String(initial.price));
+  useEffect(() => { if (open) { setName(initial.name); setPrice(String(initial.price)); } }, [open, initial.name, initial.price]);
+  const submit = () => {
+    const p = Number(price.replace(",", "."));
+    if (!name.trim() || !Number.isFinite(p) || p < 0) { toast.error("Données invalides"); return; }
+    onSubmit({ name, price: p });
+  };
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1.5"><Label>Nom</Label><Input autoFocus value={name} onChange={(e) => setName(e.target.value)} /></div>
+          <div className="space-y-1.5"><Label>Prix (€)</Label><Input inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} /></div>
+        </div>
+        <DialogFooter>
+          <DialogClose asChild><Button variant="secondary">Annuler</Button></DialogClose>
+          <Button className="bg-brand-gradient" onClick={submit}>Valider</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ConfirmDialog({ open, title, description, onClose, onConfirm }: {
+  open: boolean; title: string; description: string; onClose: () => void; onConfirm: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <DialogClose asChild><Button variant="secondary">Annuler</Button></DialogClose>
+          <Button variant="destructive" onClick={onConfirm}>Supprimer</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

@@ -8,13 +8,13 @@ import { fetchRooms, fetchTables, fetchCategories, fetchProducts, fmt, type Room
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { ChevronLeft, Minus, Plus, Send, ShoppingCart, Loader2, MapPin, Hash } from "lucide-react";
+import { ChevronLeft, Minus, Plus, Send, ShoppingCart, Loader2, MapPin, Hash, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/serveur")({ component: () => <RoleGate allow="server"><ServerApp /></RoleGate> });
 
 type Step = "rooms" | "tables" | "menu" | "review";
-type Cart = Record<string, { product: Product; qty: number }>;
+type Cart = Record<string, { product: Product; qty: number; note: string }>;
 
 function ServerApp() {
   const { user, fullName } = useAuth();
@@ -22,7 +22,6 @@ function ServerApp() {
   const [room, setRoom] = useState<Room | null>(null);
   const [table, setTable] = useState<Tbl | null>(null);
   const [cart, setCart] = useState<Cart>({});
-  const [note, setNote] = useState("");
   const [sending, setSending] = useState(false);
 
   const rooms = useQuery({ queryKey: ["rooms"], queryFn: fetchRooms });
@@ -36,18 +35,20 @@ function ServerApp() {
   );
   const itemCount = useMemo(() => Object.values(cart).reduce((s, l) => s + l.qty, 0), [cart]);
 
-  const addOne = (p: Product) => setCart((c) => ({ ...c, [p.id]: { product: p, qty: (c[p.id]?.qty ?? 0) + 1 } }));
+  const addOne = (p: Product) => setCart((c) => ({ ...c, [p.id]: { product: p, qty: (c[p.id]?.qty ?? 0) + 1, note: c[p.id]?.note ?? "" } }));
   const subOne = (p: Product) => setCart((c) => {
     const cur = c[p.id]?.qty ?? 0;
     const next = cur - 1;
     const copy = { ...c };
     if (next <= 0) delete copy[p.id];
-    else copy[p.id] = { product: p, qty: next };
+    else copy[p.id] = { product: p, qty: next, note: c[p.id]?.note ?? "" };
     return copy;
   });
+  const setItemNote = (id: string, note: string) =>
+    setCart((c) => (c[id] ? { ...c, [id]: { ...c[id], note } } : c));
 
   const reset = () => {
-    setStep("rooms"); setRoom(null); setTable(null); setCart({}); setNote("");
+    setStep("rooms"); setRoom(null); setTable(null); setCart({});
   };
 
   const sendOrder = async () => {
@@ -60,7 +61,7 @@ function ServerApp() {
       table_label: table.label,
       room_name: room.name,
       total,
-      note: note.trim() || null,
+      note: null,
     }).select().single();
     if (error || !order) { setSending(false); toast.error(error?.message ?? "Erreur envoi"); return; }
     const items = Object.values(cart).map((l) => ({
@@ -69,6 +70,7 @@ function ServerApp() {
       product_name: l.product.name,
       unit_price: l.product.price,
       quantity: l.qty,
+      note: l.note.trim() || null,
     }));
     const { error: e2 } = await supabase.from("order_items").insert(items);
     setSending(false);
@@ -128,7 +130,7 @@ function ServerApp() {
         )}
 
         {step === "review" && (
-          <Review cart={cart} note={note} setNote={setNote} onAdd={addOne} onSub={subOne} total={total} />
+          <Review cart={cart} onAdd={addOne} onSub={subOne} onNote={setItemNote} total={total} />
         )}
       </main>
 
@@ -239,30 +241,39 @@ function Menu({ cart, onAdd, onSub, categories, products, loading }: {
   );
 }
 
-function Review({ cart, note, setNote, onAdd, onSub, total }: {
-  cart: Cart; note: string; setNote: (v: string) => void;
-  onAdd: (p: Product) => void; onSub: (p: Product) => void; total: number;
+function Review({ cart, onAdd, onSub, onNote, total }: {
+  cart: Cart;
+  onAdd: (p: Product) => void; onSub: (p: Product) => void;
+  onNote: (id: string, note: string) => void; total: number;
 }) {
   const lines = Object.values(cart);
   return (
     <div className="space-y-4">
-      <ul className="space-y-2">
+      <ul className="space-y-3">
         {lines.map((l) => (
-          <li key={l.product.id} className="bg-card-gradient flex items-center gap-3 rounded-xl border border-border p-3 shadow-card">
-            <div className="min-w-0 flex-1">
-              <div className="truncate font-semibold">{l.product.name}</div>
-              <div className="text-sm text-muted-foreground">{fmt(l.product.price)} € × {l.qty} = <span className="font-medium text-foreground">{fmt(l.product.price * l.qty)} €</span></div>
+          <li key={l.product.id} className="bg-card-gradient rounded-xl border border-border p-3 shadow-card">
+            <div className="flex items-center gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-semibold">{l.product.name}</div>
+                <div className="text-sm text-muted-foreground">{fmt(l.product.price)} € × {l.qty} = <span className="font-medium text-foreground">{fmt(l.product.price * l.qty)} €</span></div>
+              </div>
+              <Button size="icon" variant="secondary" className="h-10 w-10" onClick={() => onSub(l.product)}><Minus className="h-4 w-4" /></Button>
+              <span className="w-6 text-center text-base font-bold">{l.qty}</span>
+              <Button size="icon" className="h-10 w-10 bg-brand-gradient" onClick={() => onAdd(l.product)}><Plus className="h-4 w-4" /></Button>
             </div>
-            <Button size="icon" variant="secondary" className="h-10 w-10" onClick={() => onSub(l.product)}><Minus className="h-4 w-4" /></Button>
-            <span className="w-6 text-center text-base font-bold">{l.qty}</span>
-            <Button size="icon" className="h-10 w-10 bg-brand-gradient" onClick={() => onAdd(l.product)}><Plus className="h-4 w-4" /></Button>
+            <div className="mt-2 flex items-start gap-2">
+              <MessageSquare className="mt-2 h-4 w-4 shrink-0 opacity-60" />
+              <Textarea
+                value={l.note}
+                onChange={(e) => onNote(l.product.id, e.target.value)}
+                placeholder="Remarque (ex: sans oignons, bien cuit...)"
+                rows={2}
+                className="resize-none text-sm"
+              />
+            </div>
           </li>
         ))}
       </ul>
-      <div className="space-y-2">
-        <label className="text-sm font-medium" htmlFor="note">Remarque (optionnel)</label>
-        <Textarea id="note" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ex: sans oignons, bien cuit, allergie..." rows={3} className="resize-none" />
-      </div>
       <div className="bg-card-gradient flex items-center justify-between rounded-xl border border-border p-4 shadow-card">
         <span className="text-sm text-muted-foreground">Total</span>
         <span className="text-2xl font-bold">{fmt(total)} €</span>
